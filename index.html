@@ -90,13 +90,25 @@
 
     function buildScene(cfg) {
       const scene = document.createElement("a-scene");
+      // Параметры:
+      //  - maxTrack: 1 — одновременно один таргет (быстрее и стабильнее);
+      //  - filterMinCF / filterBeta — low-pass фильтр позы; меньше значения =
+      //    сильнее сглаживание (меньше дрожи, но больше задержки);
+      //  - missTolerance — сколько кадров подряд может пропасть трекинг,
+      //    прежде чем entity скроется. Больше = меньше «мигания».
       scene.setAttribute("mindar-image",
-        `imageTargetSrc: ${cfg.mindFile}; maxTrack: 1; uiScanning: no; uiLoading: no; uiError: no`);
+        `imageTargetSrc: ${cfg.mindFile};` +
+        ` maxTrack: 1;` +
+        ` filterMinCF: 0.0001;` +
+        ` filterBeta: 0.01;` +
+        ` warmupTolerance: 5;` +
+        ` missTolerance: 15;` +
+        ` uiScanning: no; uiLoading: no; uiError: no`);
       scene.setAttribute("color-space", "sRGB");
       scene.setAttribute("renderer", "colorManagement: true, physicallyCorrectLights: true");
       scene.setAttribute("vr-mode-ui", "enabled: false");
       scene.setAttribute("device-orientation-permission-ui", "enabled: false");
-      scene.setAttribute("embedded", "");
+      // ВАЖНО: без `embedded` — иначе MindAR не рисует поток с камеры.
 
       const assets = document.createElement("a-assets");
       const seen = new Map();
@@ -119,6 +131,18 @@
       cfg.spots.forEach((s, i) => {
         const t = document.createElement("a-entity");
         t.setAttribute("mindar-image-target", `targetIndex: ${i}`);
+
+        // Полупрозрачная плашка-подсветка на месте распознанного фото —
+        // видно, что зона поймалась, даже если 3D-объект вне кадра.
+        // width: 1 = ширина фото; height взято с запасом (реальная считается
+        // из соотношения сторон таргета — MindAR масштабирует автоматически).
+        const outline = document.createElement("a-entity");
+        outline.setAttribute("geometry", "primitive: plane; width: 1; height: 0.7");
+        outline.setAttribute("material",
+          "shader: flat; color: #e65a28; opacity: 0.18; transparent: true; side: double");
+        outline.setAttribute("position", "0 0 0.001");
+        t.appendChild(outline);
+
         const m = document.createElement("a-gltf-model");
         m.setAttribute("src", `#${seen.get(s.model)}`);
         if (s.scale)    m.setAttribute("scale", s.scale);
