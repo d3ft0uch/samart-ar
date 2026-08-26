@@ -10,7 +10,10 @@
   <style>
     :root { --bg:#17181c; --ink:#f0ede6; --dim:#9a978f; --accent:#e65a28; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    html, body { height:100%; background:#000; color:var(--ink);
+    /* ВАЖНО: без background у html/body — иначе <video> MindAR (z-index:-2)
+       уходит ЗА фон body и не виден. Фон нужен только у #fallback, чтобы там
+       поверх камеры показывать нормальное сообщение. */
+    html, body { height:100%; color:var(--ink); background:transparent;
       font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; overflow:hidden; }
     a-scene { width:100%; height:100%; display:block; }
     .mindar-ui-overlay { display:none !important; }
@@ -99,13 +102,14 @@
       scene.setAttribute("mindar-image",
         `imageTargetSrc: ${cfg.mindFile};` +
         ` maxTrack: 1;` +
-        ` filterMinCF: 0.0001;` +
-        ` filterBeta: 0.01;` +
+        ` filterMinCF: 0.00001;` +
+        ` filterBeta: 0.001;` +
         ` warmupTolerance: 5;` +
         ` missTolerance: 15;` +
         ` uiScanning: no; uiLoading: no; uiError: no`);
       scene.setAttribute("color-space", "sRGB");
-      scene.setAttribute("renderer", "colorManagement: true, physicallyCorrectLights: true");
+      // alpha: true — прозрачный canvas, чтобы под ним был виден <video>.
+      scene.setAttribute("renderer", "colorManagement: true, physicallyCorrectLights: true, alpha: true");
       scene.setAttribute("vr-mode-ui", "enabled: false");
       scene.setAttribute("device-orientation-permission-ui", "enabled: false");
       // ВАЖНО: без `embedded` — иначе MindAR не рисует поток с камеры.
@@ -131,17 +135,6 @@
       cfg.spots.forEach((s, i) => {
         const t = document.createElement("a-entity");
         t.setAttribute("mindar-image-target", `targetIndex: ${i}`);
-
-        // Полупрозрачная плашка-подсветка на месте распознанного фото —
-        // видно, что зона поймалась, даже если 3D-объект вне кадра.
-        // width: 1 = ширина фото; height взято с запасом (реальная считается
-        // из соотношения сторон таргета — MindAR масштабирует автоматически).
-        const outline = document.createElement("a-entity");
-        outline.setAttribute("geometry", "primitive: plane; width: 1; height: 0.7");
-        outline.setAttribute("material",
-          "shader: flat; color: #e65a28; opacity: 0.18; transparent: true; side: double");
-        outline.setAttribute("position", "0 0 0.001");
-        t.appendChild(outline);
 
         const m = document.createElement("a-gltf-model");
         m.setAttribute("src", `#${seen.get(s.model)}`);
