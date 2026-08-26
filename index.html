@@ -69,20 +69,21 @@
     AFRAME.registerComponent("smooth-follow", {
       schema: {
         target: { type: "selector" },
-        // Отдельные фактора для позиции и вращения:
-        //  - position чувствителен к отзывчивости (объект должен «жить» на фото);
-        //  - rotation зажимаем сильнее — угол проекции очень шумный.
         posFactor: { default: 0.25 },
-        rotFactor: { default: 0.08 },
-        // Если угол между текущим и целевым вращением меньше этого порога —
-        // не двигаем модель вообще. Убивает микро-jitter при спокойной руке,
-        // при резком повороте (>порога) сглаживание идёт как обычно.
+        rotFactor: { default: 0.15 },
         rotDeadbandDeg: { default: 0.6 },
+        // yawOnly: берём только вращение вокруг вертикали (Y).
+        // Наклон вперёд/назад и крен от MindAR игнорируем — они и есть
+        // источник flip-ов и «кувыркания» при неоднозначной pose плоского
+        // маркера. Модель всегда стоит вертикально и не запрокидывается.
+        yawOnly: { default: true },
       },
       init() {
         this._pos = new THREE.Vector3();
         this._quat = new THREE.Quaternion();
         this._scale = new THREE.Vector3();
+        this._targetQuat = new THREE.Quaternion();
+        this._euler = new THREE.Euler(0, 0, 0, "YXZ");
         this._first = true;
         this.el.object3D.visible = false;
       },
@@ -98,16 +99,28 @@
         }
         t3d.updateMatrixWorld(true);
         t3d.matrixWorld.decompose(this._pos, this._quat, this._scale);
+
+        // yaw-only: обнуляем pitch (X) и roll (Z), оставляем только вращение
+        // вокруг мировой вертикали Y. Порядок YXZ даёт «человеческий» yaw
+        // (сначала поворот вокруг вертикали, потом наклон, потом крен).
+        if (this.data.yawOnly) {
+          this._euler.setFromQuaternion(this._quat, "YXZ");
+          this._targetQuat.setFromEuler(
+            new THREE.Euler(0, this._euler.y, 0, "YXZ"));
+        } else {
+          this._targetQuat.copy(this._quat);
+        }
+
         if (this._first) {
           s3d.position.copy(this._pos);
-          s3d.quaternion.copy(this._quat);
+          s3d.quaternion.copy(this._targetQuat);
           s3d.scale.copy(this._scale);
           this._first = false;
         } else {
           s3d.position.lerp(this._pos, this.data.posFactor);
           const deadband = this.data.rotDeadbandDeg * Math.PI / 180;
-          if (s3d.quaternion.angleTo(this._quat) > deadband) {
-            s3d.quaternion.slerp(this._quat, this.data.rotFactor);
+          if (s3d.quaternion.angleTo(this._targetQuat) > deadband) {
+            s3d.quaternion.slerp(this._targetQuat, this.data.rotFactor);
           }
           s3d.scale.copy(this._scale);
         }
@@ -156,13 +169,12 @@
       scene.setAttribute("mindar-image",
         `imageTargetSrc: ${cfg.mindFile};` +
         ` maxTrack: 1;` +
-        // MinCutoff меньше = меньше шум в статике, Beta большая = быстро реагируем
-        // на реальное движение. Основное сглаживание всё равно делает
-        // компонент `smooth-follow` ниже (lerp/slerp world-трансформации).
-        ` filterMinCF: 0.00001;` +
+        ` filterMinCF: 0.0001;` +
         ` filterBeta: 1000;` +
         ` warmupTolerance: 5;` +
-        ` missTolerance: 15;` +
+        // missTolerance 60 ≈ 1 сек — модель не мигает при короткой
+        // потере трекинга (просто «висит» на последней известной позе).
+        ` missTolerance: 60;` +
         ` uiScanning: no; uiLoading: no; uiError: no`);
       scene.setAttribute("color-space", "sRGB");
       // alpha: true — прозрачный canvas, чтобы под ним был виден <video>.
