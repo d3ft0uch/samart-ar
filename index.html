@@ -69,7 +69,15 @@
     AFRAME.registerComponent("smooth-follow", {
       schema: {
         target: { type: "selector" },
-        factor: { default: 0.18 },
+        // Отдельные фактора для позиции и вращения:
+        //  - position чувствителен к отзывчивости (объект должен «жить» на фото);
+        //  - rotation зажимаем сильнее — угол проекции очень шумный.
+        posFactor: { default: 0.25 },
+        rotFactor: { default: 0.08 },
+        // Если угол между текущим и целевым вращением меньше этого порога —
+        // не двигаем модель вообще. Убивает микро-jitter при спокойной руке,
+        // при резком повороте (>порога) сглаживание идёт как обычно.
+        rotDeadbandDeg: { default: 0.6 },
       },
       init() {
         this._pos = new THREE.Vector3();
@@ -83,7 +91,6 @@
         if (!target || !target.object3D) return;
         const t3d = target.object3D;
         const s3d = this.el.object3D;
-        // MindAR прячет target через .visible=false, когда фото не в кадре.
         if (!t3d.visible) {
           s3d.visible = false;
           this._first = true;
@@ -97,9 +104,11 @@
           s3d.scale.copy(this._scale);
           this._first = false;
         } else {
-          const a = this.data.factor;
-          s3d.position.lerp(this._pos, a);
-          s3d.quaternion.slerp(this._quat, a);
+          s3d.position.lerp(this._pos, this.data.posFactor);
+          const deadband = this.data.rotDeadbandDeg * Math.PI / 180;
+          if (s3d.quaternion.angleTo(this._quat) > deadband) {
+            s3d.quaternion.slerp(this._quat, this.data.rotFactor);
+          }
           s3d.scale.copy(this._scale);
         }
         s3d.visible = true;
