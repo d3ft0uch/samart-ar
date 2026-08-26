@@ -61,6 +61,51 @@
   </div>
 
   <script>
+    // Плавно догоняем позу другой entity (нашего mindar-image-target прокси)
+    // через lerp/slerp в мировых координатах. Смысл: MindAR перезаписывает
+    // трансформацию таргета каждый кадр с sub-pixel дрожью — а мы этой дрожью
+    // не подавимся. factor 0..1: чем меньше, тем сильнее сглаживание,
+    // но заметнее задержка.
+    AFRAME.registerComponent("smooth-follow", {
+      schema: {
+        target: { type: "selector" },
+        factor: { default: 0.18 },
+      },
+      init() {
+        this._pos = new THREE.Vector3();
+        this._quat = new THREE.Quaternion();
+        this._scale = new THREE.Vector3();
+        this._first = true;
+        this.el.object3D.visible = false;
+      },
+      tick() {
+        const target = this.data.target;
+        if (!target || !target.object3D) return;
+        const t3d = target.object3D;
+        const s3d = this.el.object3D;
+        // MindAR прячет target через .visible=false, когда фото не в кадре.
+        if (!t3d.visible) {
+          s3d.visible = false;
+          this._first = true;
+          return;
+        }
+        t3d.updateMatrixWorld(true);
+        t3d.matrixWorld.decompose(this._pos, this._quat, this._scale);
+        if (this._first) {
+          s3d.position.copy(this._pos);
+          s3d.quaternion.copy(this._quat);
+          s3d.scale.copy(this._scale);
+          this._first = false;
+        } else {
+          const a = this.data.factor;
+          s3d.position.lerp(this._pos, a);
+          s3d.quaternion.slerp(this._quat, a);
+          s3d.scale.copy(this._scale);
+        }
+        s3d.visible = true;
+      },
+    });
+
     (async () => {
       // ROOM_CONFIG объявлен через `const` в works.js — это lexical binding, не window.*
       const cfg = (typeof ROOM_CONFIG !== "undefined") ? ROOM_CONFIG : null;
@@ -102,8 +147,11 @@
       scene.setAttribute("mindar-image",
         `imageTargetSrc: ${cfg.mindFile};` +
         ` maxTrack: 1;` +
+        // MinCutoff меньше = меньше шум в статике, Beta большая = быстро реагируем
+        // на реальное движение. Основное сглаживание всё равно делает
+        // компонент `smooth-follow` ниже (lerp/slerp world-трансформации).
         ` filterMinCF: 0.00001;` +
-        ` filterBeta: 0.001;` +
+        ` filterBeta: 1000;` +
         ` warmupTolerance: 5;` +
         ` missTolerance: 15;` +
         ` uiScanning: no; uiLoading: no; uiError: no`);
@@ -133,19 +181,27 @@
       scene.appendChild(cam);
 
       cfg.spots.forEach((s, i) => {
-        const t = document.createElement("a-entity");
-        t.setAttribute("mindar-image-target", `targetIndex: ${i}`);
+        // proxy: чистый mindar-image-target, невидимый (никаких мешей).
+        // Мы читаем его world matrix, но модель к нему не приаттачена.
+        const proxy = document.createElement("a-entity");
+        proxy.setAttribute("id", `spot-proxy-${i}`);
+        proxy.setAttribute("mindar-image-target", `targetIndex: ${i}`);
+
+        // отображаемая модель — лежит в scene root, догоняет proxy через lerp/slerp.
+        const holder = document.createElement("a-entity");
+        holder.setAttribute("smooth-follow", `target: #spot-proxy-${i}; factor: 0.18`);
 
         const m = document.createElement("a-gltf-model");
         m.setAttribute("src", `#${seen.get(s.model)}`);
         if (s.scale)    m.setAttribute("scale", s.scale);
         if (s.position) m.setAttribute("position", s.position);
         if (s.rotation) m.setAttribute("rotation", s.rotation);
-        t.appendChild(m);
+        holder.appendChild(m);
 
-        t.addEventListener("targetFound", () => showBanner(s.title));
-        t.addEventListener("targetLost",  () => hideBanner(s.title));
-        scene.appendChild(t);
+        proxy.addEventListener("targetFound", () => showBanner(s.title));
+        proxy.addEventListener("targetLost",  () => hideBanner(s.title));
+        scene.appendChild(proxy);
+        scene.appendChild(holder);
       });
 
       document.body.appendChild(scene);
