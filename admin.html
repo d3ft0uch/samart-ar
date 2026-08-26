@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Выставка — служебная страница</title>
+  <script src="works.js"></script>
+  <style>
+    :root { --bg:#17181c; --ink:#f0ede6; --dim:#9a978f; --accent:#e65a28; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--bg); color:var(--ink);
+      font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; padding:28px 20px; }
+    h1 { font-size:22px; letter-spacing:-0.01em; }
+    .sub { color:var(--dim); font-size:14px; margin-top:4px; }
+    ul { list-style:none; margin-top:24px; display:grid; gap:12px; max-width:520px; }
+    li { border:1px solid #2a2c33; border-radius:12px; padding:14px 16px;
+      display:flex; gap:14px; align-items:center; justify-content:space-between; }
+    a.view { color:var(--ink); text-decoration:none; font-weight:600; }
+    a.view:hover, a.view:focus-visible { color:var(--accent); }
+    .author { color:var(--dim); font-size:13px; margin-top:2px; }
+    img.qr { width:72px; height:72px; border-radius:6px; background:#fff; padding:4px; }
+    .note { color:var(--dim); font-size:13px; margin-top:24px; max-width:520px; }
+  </style>
+</head>
+<body>
+  <h1>Общий QR на зал</h1>
+  <div class="sub">Один QR у входа. По нему открывается AR-режим сразу — камера ищет фото зон и накладывает 3D-объекты.</div>
+  <ul id="room"></ul>
+
+  <h1 style="margin-top:32px">Отдельные работы</h1>
+  <div class="sub">QR у каждой работы (viewer.html?id=…). Посетители сюда не ходят — они сканируют QR.</div>
+  <ul id="list"></ul>
+
+  <div class="note">QR генерируются под текущий адрес страницы, поэтому на localhost они рабочие только внутри той же сети. Перед печатью открой эту страницу на боевом домене — коды сгенерируются с ним.</div>
+  <script>
+    function qrFor(url) {
+      return `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`;
+    }
+
+    const room = document.getElementById("room");
+    const roomUrl = new URL("index.html", location.href).href;
+    const roomQr = qrFor(roomUrl);
+    const spots = (typeof ROOM_CONFIG !== "undefined" && ROOM_CONFIG.spots) || [];
+    const suffix = spots.length === 1 ? "а" : (spots.length >= 2 && spots.length <= 4) ? "ы" : "";
+    room.insertAdjacentHTML("beforeend", `
+      <li>
+        <div>
+          <a class="view" href="${roomUrl}">Зал (AR по фото)</a>
+          <div class="author">${spots.length} зон${suffix} · index.html</div>
+        </div>
+        <a href="${roomQr}" target="_blank" rel="noopener"><img class="qr" src="${roomQr}" alt="QR: зал"></a>
+      </li>`);
+
+    const list = document.getElementById("list");
+    for (const [id, w] of Object.entries(WORKS)) {
+      const url = new URL(`viewer.html?id=${encodeURIComponent(id)}`, location.href).href;
+      const qr = qrFor(url);
+      list.insertAdjacentHTML("beforeend", `
+        <li>
+          <div>
+            <a class="view" href="${url}">${w.title}</a>
+            <div class="author">${w.author} · id=${id}</div>
+          </div>
+          <a href="${qr}" target="_blank" rel="noopener"><img class="qr" src="${qr}" alt="QR: ${w.title}"></a>
+        </li>`);
+    }
+  </script>
+</body>
+</html>

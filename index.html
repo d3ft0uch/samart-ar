@@ -2,46 +2,149 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Выставка — служебная страница</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Зал выставки — AR</title>
+  <script src="lib/aframe.min.js"></script>
+  <script src="lib/mindar-image-aframe.prod.js"></script>
   <script src="works.js"></script>
   <style>
     :root { --bg:#17181c; --ink:#f0ede6; --dim:#9a978f; --accent:#e65a28; }
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:var(--bg); color:var(--ink);
-      font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; padding:28px 20px; }
-    h1 { font-size:22px; letter-spacing:-0.01em; }
-    .sub { color:var(--dim); font-size:14px; margin-top:4px; }
-    ul { list-style:none; margin-top:24px; display:grid; gap:12px; max-width:520px; }
-    li { border:1px solid #2a2c33; border-radius:12px; padding:14px 16px;
-      display:flex; gap:14px; align-items:center; justify-content:space-between; }
-    a.view { color:var(--ink); text-decoration:none; font-weight:600; }
-    a.view:hover, a.view:focus-visible { color:var(--accent); }
-    .author { color:var(--dim); font-size:13px; margin-top:2px; }
-    img.qr { width:72px; height:72px; border-radius:6px; background:#fff; padding:4px; }
-    .note { color:var(--dim); font-size:13px; margin-top:24px; max-width:520px; }
+    html, body { height:100%; background:#000; color:var(--ink);
+      font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; overflow:hidden; }
+    a-scene { width:100%; height:100%; display:block; }
+    .mindar-ui-overlay { display:none !important; }
+
+    #hud {
+      position:fixed; left:0; right:0; top:0; padding:14px 18px calc(14px + env(safe-area-inset-top)) 18px;
+      background:linear-gradient(#000a, #0000); color:var(--ink); pointer-events:none;
+      font-size:14px; letter-spacing:0.02em;
+    }
+    #hud .name { font-size:16px; font-weight:600; }
+    #hud .dim { color:var(--dim); }
+
+    #banner {
+      position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom));
+      transform:translateX(-50%);
+      background:#0009; color:var(--ink); border:1px solid #ffffff20;
+      backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
+      padding:10px 16px; border-radius:999px; font-weight:600; font-size:15px;
+      opacity:0; transition:opacity .18s ease; pointer-events:none;
+    }
+    #banner.on { opacity:1; }
+
+    #fallback {
+      position:fixed; inset:0; display:none; place-content:center; text-align:center;
+      padding:32px; background:var(--bg);
+    }
+    #fallback.on { display:grid; }
+    #fallback h1 { font-size:20px; font-weight:600; margin-bottom:10px; }
+    #fallback p { color:var(--dim); max-width:520px; margin:0 auto 8px; }
+    #fallback code { background:#2a2c33; padding:2px 6px; border-radius:4px; font-size:13px; }
+    #fallback a { color:var(--accent); }
   </style>
 </head>
 <body>
-  <h1>Работы выставки</h1>
-  <div class="sub">Служебная страница: ссылки и QR для печати. Посетители сюда не ходят — они сканируют QR.</div>
-  <ul id="list"></ul>
-  <div class="note">QR генерируются под текущий адрес страницы, поэтому на localhost они рабочие только внутри той же сети. Перед печатью открой эту страницу на боевом домене — коды сгенерируются с ним.</div>
+  <div id="hud"><div class="name">Зал выставки</div><div class="dim">Наведи камеру на зону — появится 3D-объект</div></div>
+  <div id="banner"></div>
+
+  <div id="fallback">
+    <div>
+      <h1>Таргеты зала ещё не собраны</h1>
+      <p>Файл <code id="fbFile">targets/room.mind</code> не найден.</p>
+      <p>Собери таргеты из фото зон (см. README) и положи полученный файл рядом.</p>
+      <p><a href="admin.html">Открыть служебную страницу →</a></p>
+    </div>
+  </div>
+
   <script>
-    const list = document.getElementById("list");
-    for (const [id, w] of Object.entries(WORKS)) {
-      const url = new URL(`viewer.html?id=${encodeURIComponent(id)}`, location.href).href;
-      // QR рисуем через публичный генератор картинок только для предпросмотра;
-      // для печати можно сохранить картинку правой кнопкой.
-      const qr = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`;
-      list.insertAdjacentHTML("beforeend", `
-        <li>
-          <div>
-            <a class="view" href="${url}">${w.title}</a>
-            <div class="author">${w.author} · id=${id}</div>
-          </div>
-          <a href="${qr}" target="_blank" rel="noopener"><img class="qr" src="${qr}" alt="QR: ${w.title}"></a>
-        </li>`);
+    (async () => {
+      // ROOM_CONFIG объявлен через `const` в works.js — это lexical binding, не window.*
+      const cfg = (typeof ROOM_CONFIG !== "undefined") ? ROOM_CONFIG : null;
+      if (!cfg || !Array.isArray(cfg.spots) || cfg.spots.length === 0) {
+        showFallback("В works.js нет ROOM_CONFIG.spots");
+        return;
+      }
+      document.getElementById("fbFile").textContent = cfg.mindFile;
+
+      let ok = false;
+      try {
+        const r = await fetch(cfg.mindFile, { method: "HEAD" });
+        ok = r.ok;
+      } catch (_) { ok = false; }
+      if (!ok) { showFallback(); return; }
+
+      buildScene(cfg);
+    })();
+
+    function showFallback(extra) {
+      const fb = document.getElementById("fallback");
+      if (extra) {
+        const p = document.createElement("p");
+        p.textContent = extra;
+        fb.querySelector("div").appendChild(p);
+      }
+      fb.classList.add("on");
+      document.getElementById("hud").style.display = "none";
+    }
+
+    function buildScene(cfg) {
+      const scene = document.createElement("a-scene");
+      scene.setAttribute("mindar-image",
+        `imageTargetSrc: ${cfg.mindFile}; maxTrack: 1; uiScanning: no; uiLoading: no; uiError: no`);
+      scene.setAttribute("color-space", "sRGB");
+      scene.setAttribute("renderer", "colorManagement: true, physicallyCorrectLights: true");
+      scene.setAttribute("vr-mode-ui", "enabled: false");
+      scene.setAttribute("device-orientation-permission-ui", "enabled: false");
+      scene.setAttribute("embedded", "");
+
+      const assets = document.createElement("a-assets");
+      const seen = new Map();
+      cfg.spots.forEach((s) => {
+        if (seen.has(s.model)) return;
+        const id = `spot-model-${seen.size}`;
+        seen.set(s.model, id);
+        const a = document.createElement("a-asset-item");
+        a.setAttribute("id", id);
+        a.setAttribute("src", s.model);
+        assets.appendChild(a);
+      });
+      scene.appendChild(assets);
+
+      const cam = document.createElement("a-camera");
+      cam.setAttribute("position", "0 0 0");
+      cam.setAttribute("look-controls", "enabled: false");
+      scene.appendChild(cam);
+
+      cfg.spots.forEach((s, i) => {
+        const t = document.createElement("a-entity");
+        t.setAttribute("mindar-image-target", `targetIndex: ${i}`);
+        const m = document.createElement("a-gltf-model");
+        m.setAttribute("src", `#${seen.get(s.model)}`);
+        if (s.scale)    m.setAttribute("scale", s.scale);
+        if (s.position) m.setAttribute("position", s.position);
+        if (s.rotation) m.setAttribute("rotation", s.rotation);
+        t.appendChild(m);
+
+        t.addEventListener("targetFound", () => showBanner(s.title));
+        t.addEventListener("targetLost",  () => hideBanner(s.title));
+        scene.appendChild(t);
+      });
+
+      document.body.appendChild(scene);
+    }
+
+    let bannerShownFor = null;
+    const banner = document.getElementById("banner");
+    function showBanner(title) {
+      bannerShownFor = title;
+      banner.textContent = title;
+      banner.classList.add("on");
+    }
+    function hideBanner(title) {
+      if (bannerShownFor !== title) return;
+      bannerShownFor = null;
+      banner.classList.remove("on");
     }
   </script>
 </body>

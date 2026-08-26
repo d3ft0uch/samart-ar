@@ -1,0 +1,12 @@
+.DS_Store
+.idea/
+node_modules/
+
+# Исходники моделей (FBX/blend) — не рантайм, кладём отдельно.
+# GLB в models/ коммитим.
+*.fbx
+*.blend
+*.blend1
+
+# Локальные незакомпилированные фото зон (кладите в source-photos/, если удобно)
+images/

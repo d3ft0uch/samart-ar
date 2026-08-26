@@ -1,0 +1,9 @@
+{
+  "name": "samart-ar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebAR exhibition — static site. Scripts тут только для dev-удобств (перекомпиляция таргетов); рантайм-зависимостей нет.",
+  "scripts": {
+    "compile:room": "bash tools/compile-room.sh images/img1.JPG images/img2.JPG images/img3.JPG images/img4.JPG"
+  }
+}

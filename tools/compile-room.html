@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Компилятор таргетов для room.html</title>
+  <script src="../lib/mindar-image-aframe.prod.js"></script>
+  <style>
+    :root { --bg:#17181c; --ink:#f0ede6; --dim:#9a978f; --accent:#e65a28; --line:#2a2c33; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--ink);
+      font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; padding:24px; }
+    h1 { font-size:20px; margin:0 0 4px; }
+    .sub { color:var(--dim); font-size:13px; margin-bottom:20px; max-width:680px; }
+    #drop {
+      border:2px dashed var(--line); border-radius:14px; padding:28px; text-align:center;
+      background:#1c1e24; cursor:pointer; transition:border-color .15s, background .15s;
+    }
+    #drop.hot { border-color:var(--accent); background:#22242b; }
+    #drop input { display:none; }
+    #list { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; margin-top:18px; }
+    .card { border:1px solid var(--line); border-radius:10px; padding:10px; background:#1c1e24;
+      display:flex; flex-direction:column; gap:6px; }
+    .card img { width:100%; aspect-ratio:1; object-fit:contain; background:#000; border-radius:6px; }
+    .card .name { font-size:12px; color:var(--dim); word-break:break-all; }
+    .card .idx { font-size:11px; color:var(--accent); font-weight:700; }
+    .row { display:flex; gap:12px; align-items:center; margin-top:20px; flex-wrap:wrap; }
+    button { background:var(--accent); color:#fff; border:0; border-radius:8px;
+      padding:11px 18px; font:600 14px system-ui,sans-serif; cursor:pointer; }
+    button.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    #log { margin-top:16px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:12px; color:var(--dim); white-space:pre-wrap; min-height:1.5em; }
+    a.dl { display:inline-block; margin-top:10px; color:var(--accent); }
+  </style>
+</head>
+<body>
+  <h1>Компилятор таргетов → room.mind</h1>
+  <div class="sub">
+    Кинь сюда JPG/PNG зон в том же порядке, в котором они лежат в <code>ROOM_CONFIG.spots</code>
+    (первое фото = spots[0]). Порядок можно менять перетаскиванием карточек.
+    Результат сохрани как <code>targets/room.mind</code>.
+  </div>
+
+  <label id="drop">
+    <input type="file" accept="image/*" multiple>
+    <div><strong>Перетащи фото сюда</strong> или кликни, чтобы выбрать</div>
+    <div class="sub" style="margin-top:6px">JPEG/PNG, желательно 500–1200 px по короткой стороне, много контрастных нерегулярных деталей</div>
+  </label>
+
+  <div id="list"></div>
+
+  <div class="row">
+    <button id="compile" disabled>Скомпилировать</button>
+    <button id="clear" class="ghost" disabled>Очистить</button>
+    <span id="progress" class="sub"></span>
+  </div>
+
+  <div id="log"></div>
+
+  <script>
+    const drop = document.getElementById("drop");
+    const input = drop.querySelector("input");
+    const list = document.getElementById("list");
+    const btnCompile = document.getElementById("compile");
+    const btnClear = document.getElementById("clear");
+    const log = document.getElementById("log");
+    const progress = document.getElementById("progress");
+
+    let items = []; // { name, url, img: HTMLImageElement }
+
+    function print(msg) { log.textContent += (log.textContent ? "\n" : "") + msg; }
+    function reset() {
+      items.forEach(i => URL.revokeObjectURL(i.url));
+      items = []; render();
+      log.textContent = ""; progress.textContent = "";
+    }
+
+    function render() {
+      list.innerHTML = "";
+      items.forEach((it, i) => {
+        const c = document.createElement("div");
+        c.className = "card";
+        c.draggable = true;
+        c.dataset.i = i;
+        c.innerHTML = `
+          <img src="${it.url}" alt="">
+          <div class="idx">targetIndex: ${i} → spots[${i}]</div>
+          <div class="name">${it.name}</div>`;
+        c.addEventListener("dragstart", e => { e.dataTransfer.setData("text/plain", i); });
+        c.addEventListener("dragover", e => e.preventDefault());
+        c.addEventListener("drop", e => {
+          e.preventDefault();
+          const from = +e.dataTransfer.getData("text/plain");
+          const to = i;
+          if (from === to) return;
+          const [m] = items.splice(from, 1);
+          items.splice(to, 0, m);
+          render();
+        });
+        list.appendChild(c);
+      });
+      btnCompile.disabled = items.length === 0;
+      btnClear.disabled = items.length === 0;
+    }
+
+    async function addFiles(files) {
+      for (const f of files) {
+        if (!f.type.startsWith("image/")) continue;
+        const url = URL.createObjectURL(f);
+        const img = await new Promise((res, rej) => {
+          const i = new Image();
+          i.onload = () => res(i);
+          i.onerror = rej;
+          i.src = url;
+        });
+        items.push({ name: f.name, url, img });
+      }
+      render();
+    }
+
+    input.addEventListener("change", e => addFiles(e.target.files));
+    ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => {
+      e.preventDefault(); drop.classList.add("hot");
+    }));
+    ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => {
+      e.preventDefault(); drop.classList.remove("hot");
+    }));
+    drop.addEventListener("drop", e => addFiles(e.dataTransfer.files));
+    btnClear.addEventListener("click", reset);
+
+    async function compile(autoDownload) {
+      btnCompile.disabled = true; btnClear.disabled = true;
+      log.textContent = "";
+      progress.textContent = "0%";
+      try {
+        const compiler = new window.MINDAR.IMAGE.Compiler();
+        const images = items.map(i => i.img);
+        const t0 = performance.now();
+        await compiler.compileImageTargets(images, (p) => {
+          progress.textContent = p.toFixed(1) + "%";
+        });
+        const buffer = await compiler.exportData();
+        const dt = ((performance.now() - t0) / 1000).toFixed(1);
+        print(`Скомпилировано ${images.length} таргет(ов) за ${dt}s, размер: ${(buffer.byteLength/1024).toFixed(1)} KB`);
+
+        const blob = new Blob([buffer]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "room.mind";
+        a.className = "dl";
+        a.textContent = "⬇︎ Скачать room.mind (положить в targets/room.mind)";
+        log.appendChild(document.createElement("br"));
+        log.appendChild(a);
+
+        if (autoDownload) {
+          // Chrome по-умолчанию сохранит в ~/Downloads/room.mind без диалога.
+          a.click();
+          print("Скачивание запущено автоматически (Downloads/room.mind).");
+        }
+      } catch (e) {
+        print("Ошибка: " + (e && e.message || e));
+        console.error(e);
+      } finally {
+        btnCompile.disabled = items.length === 0;
+        btnClear.disabled = items.length === 0;
+      }
+    }
+
+    btnCompile.addEventListener("click", () => compile(false));
+
+    // Авто-режим: ?auto=path1,path2,... — грузим фото через fetch и сразу компилим.
+    (async () => {
+      const params = new URLSearchParams(location.search);
+      const auto = params.get("auto");
+      if (!auto) return;
+      const paths = auto.split(",").map(s => s.trim()).filter(Boolean);
+      print(`[auto] Загружаю ${paths.length} фото…`);
+      for (const p of paths) {
+        let res;
+        try { res = await fetch(p); }
+        catch (e) { print("[auto] сеть: " + p + ": " + e.message); continue; }
+        if (!res.ok) { print("[auto] " + p + ": HTTP " + res.status); continue; }
+        const blob = await res.blob();
+        const name = p.split("/").pop();
+        const file = new File([blob], name, { type: blob.type || "image/jpeg" });
+        await addFiles([file]);
+      }
+      if (items.length === paths.length) {
+        print("[auto] Компилирую…");
+        await compile(true);
+      }
+    })();
+  </script>
+</body>
+</html>
