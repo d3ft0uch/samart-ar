@@ -24,13 +24,6 @@ const WORKS = {
     model: "models/obj3.glb",
     usdz: "models/obj3.usdz",
   },
-  "4": {
-    title: "Объект 4",
-    author: "— замени подпись —",
-    description: "— замени описание —",
-    model: "models/obj4.glb",
-    usdz: "models/obj4.usdz",
-  },
 };
 
 // Конфиг для room.html — MindAR image tracking по фото зон/фрагментов интерьера.
@@ -61,13 +54,6 @@ const ROOM_CONFIG = {
     {
       title: "Зона 3",
       model: "models/obj3.glb",
-      scale: "0.5 0.5 0.5",
-      position: "0 0 0",
-      rotation: "0 0 0",
-    },
-    {
-      title: "Зона 4",
-      model: "models/obj4.glb",
       scale: "0.5 0.5 0.5",
       position: "0 0 0",
       rotation: "0 0 0",

@@ -108,7 +108,7 @@ python3 -m http.server 8000
 **Автоматически** (одна команда):
 
 ```bash
-tools/compile-room.sh images/img1.JPG images/img2.JPG images/img3.JPG images/img4.JPG
+tools/compile-room.sh images/img1.JPG images/img2.JPG images/img3.JPG
 ```
 
 Скрипт поднимет локальный http-сервер, откроет браузер, дождётся скачивания
