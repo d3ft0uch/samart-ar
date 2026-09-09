@@ -16,6 +16,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; }
     body {
+      position: relative;
       background: var(--bg);
       color: var(--ink);
       font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -50,6 +51,22 @@
       font: 600 15px system-ui, sans-serif;
       cursor: pointer;
     }
+    .nav-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 44px;
+      height: 44px;
+      border: 0;
+      border-radius: 50%;
+      background: rgba(23, 24, 28, 0.55);
+      color: var(--ink);
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    .nav-arrow.prev { left: 12px; }
+    .nav-arrow.next { right: 12px; }
     .error {
       flex: 1;
       display: grid;
@@ -87,8 +104,21 @@
           <h1>${work.title}</h1>
           <div class="author">${work.author}</div>
           <p>${work.description}</p>
-          <div class="hint">Вращайте модель пальцем. Кнопка AR поставит объект рядом с вами — работает не на всех устройствах, модель видна в любом случае.</div>
+<!--          <div class="hint">Вращайте модель пальцем. Кнопка AR поставит объект рядом с вами — работает не на всех устройствах, модель видна в любом случае.</div>-->
         </div>`);
+
+      // Стрелки переключения между работами, по кругу (после последней — снова первая).
+      const ids = Object.keys(WORKS);
+      if (ids.length > 1) {
+        const i = ids.indexOf(params.get("id"));
+        const prevId = ids[(i - 1 + ids.length) % ids.length];
+        const nextId = ids[(i + 1) % ids.length];
+        document.body.insertAdjacentHTML("beforeend", `
+          <button class="nav-arrow prev" aria-label="Предыдущая работа"
+            onclick="location.href='viewer.html?id=${encodeURIComponent(prevId)}'">‹</button>
+          <button class="nav-arrow next" aria-label="Следующая работа"
+            onclick="location.href='viewer.html?id=${encodeURIComponent(nextId)}'">›</button>`);
+      }
     }
   </script>
 </body>
