@@ -15,6 +15,7 @@ p.add_argument("--out", dest="out", required=True, help="путь к GLB")
 p.add_argument("--usdz", dest="usdz", default=None, help="путь к USDZ (для iOS Quick Look)")
 p.add_argument("--decimate", type=float, default=0.2, help="0..1, чем меньше — тем сильнее упрощение")
 p.add_argument("--tex", type=int, default=1024, help="максимальная сторона текстуры, px")
+p.add_argument("--scale", type=float, default=1.0, help="равномерный масштаб геометрии перед экспортом (для реального размера в AR)")
 args = p.parse_args(argv)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -36,6 +37,18 @@ except Exception as e:
     print(f"[warn] не удалось поставить обход blen_read_light: {e}")
 
 bpy.ops.import_scene.fbx(filepath=args.inp)
+
+# Масштаб геометрии (запекаем в меш, чтобы размер был одинаковый во всех
+# режимах AR — webxr/scene-viewer/quick-look все ставят объект в реальную
+# величину, взятую из самого файла, а не из атрибутов <model-viewer>).
+if args.scale and args.scale != 1.0:
+    for o in list(bpy.data.objects):
+        if o.type != "MESH":
+            continue
+        o.scale = tuple(s * args.scale for s in o.scale)
+        with bpy.context.temp_override(object=o, selected_objects=[o], selected_editable_objects=[o]):
+            bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    print(f"[scale] applied uniform factor {args.scale}")
 
 # Decimate всем мешам
 for o in list(bpy.data.objects):
