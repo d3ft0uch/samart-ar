@@ -72,6 +72,11 @@
         posFactor: { default: 0.25 },
         rotFactor: { default: 0.15 },
         rotDeadbandDeg: { default: 0.6 },
+        // Аналог rotDeadbandDeg для позиции: гасит суб-миллиметровое дрожание
+        // от шума детектора, но не мешает реальному перемещению — посетитель,
+        // идущий по залу, даёт сдвиг на порядки больше этого порога за кадр.
+        // Единица — как у position (≈ ширина маркера, см. комментарий в works.js).
+        posDeadband: { default: 0.003 },
         // yawOnly: берём только вращение вокруг вертикали (Y).
         // Наклон вперёд/назад и крен от MindAR игнорируем — они и есть
         // источник flip-ов и «кувыркания» при неоднозначной pose плоского
@@ -87,7 +92,7 @@
         this._first = true;
         this.el.object3D.visible = false;
       },
-      tick() {
+      tick(time, timeDelta) {
         const target = this.data.target;
         if (!target || !target.object3D) return;
         const t3d = target.object3D;
@@ -117,10 +122,21 @@
           s3d.scale.copy(this._scale);
           this._first = false;
         } else {
-          s3d.position.lerp(this._pos, this.data.posFactor);
+          // Сглаживание считаем от реального времени между кадрами, а не
+          // «на тик»: на просадке FPS шаг должен быть крупнее, иначе на
+          // медленных кадрах модель начинает отставать сильнее обычного.
+          // Формула — стандартный приём для frame-rate-independent lerp:
+          // при dt*60 == 1 (т.е. ровно 60 fps) даёт тот же alpha, что раньше.
+          const dt = Math.min(timeDelta || 16.7, 100) / 1000;
+          const posAlpha = 1 - Math.pow(1 - this.data.posFactor, dt * 60);
+          const rotAlpha = 1 - Math.pow(1 - this.data.rotFactor, dt * 60);
+
+          if (s3d.position.distanceTo(this._pos) > this.data.posDeadband) {
+            s3d.position.lerp(this._pos, posAlpha);
+          }
           const deadband = this.data.rotDeadbandDeg * Math.PI / 180;
           if (s3d.quaternion.angleTo(this._targetQuat) > deadband) {
-            s3d.quaternion.slerp(this._targetQuat, this.data.rotFactor);
+            s3d.quaternion.slerp(this._targetQuat, rotAlpha);
           }
           s3d.scale.copy(this._scale);
         }
@@ -210,7 +226,7 @@
 
         // отображаемая модель — лежит в scene root, догоняет proxy через lerp/slerp.
         const holder = document.createElement("a-entity");
-        holder.setAttribute("smooth-follow", `target: #spot-proxy-${i}; factor: 0.18`);
+        holder.setAttribute("smooth-follow", `target: #spot-proxy-${i}; posFactor: 0.18; rotFactor: 0.15`);
 
         const m = document.createElement("a-gltf-model");
         m.setAttribute("src", `#${seen.get(s.model)}`);
